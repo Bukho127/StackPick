@@ -2,42 +2,22 @@ package main
 
 import "testing"
 
-func TestStartSelectionUsesFrontendCatalog(t *testing.T) {
+func TestNewModelStartsAtChoiceScreen(t *testing.T) {
 	m := NewModel()
-	m.startSelection("frontend")
-
-	if m.state != stateSelecting {
-		t.Fatalf("expected stateSelecting, got %v", m.state)
-	}
-	if m.choice != "frontend" {
-		t.Fatalf("expected frontend choice, got %q", m.choice)
-	}
-	if len(m.catalog) != len(FrontendCategories) {
-		t.Fatalf("expected %d categories, got %d", len(FrontendCategories), len(m.catalog))
+	if m.state != stateChoice {
+		t.Fatalf("expected stateChoice, got %v", m.state)
 	}
 }
 
-func TestBuildRowsIncludesHeadersAndLibraries(t *testing.T) {
-	rows := buildRows(FrontendCategories)
-	if len(rows) == 0 {
-		t.Fatal("expected rows to be built")
-	}
+func TestLoadItemsUsesFrontendCatalog(t *testing.T) {
+	m := NewModel()
+	m.catalog = FrontendCategories
+	m.loadItems()
 
-	foundHeader := false
-	foundLib := false
-	for _, r := range rows {
-		if r.kind == rowHeader && r.header == "Routing" {
-			foundHeader = true
-		}
-		if r.kind == rowLib && r.catIdx == 0 {
-			foundLib = true
-		}
+	if len(m.items) == 0 {
+		t.Fatal("expected frontend items to be loaded")
 	}
-
-	if !foundHeader {
-		t.Fatal("expected Routing header row")
-	}
-	if !foundLib {
-		t.Fatal("expected first category library row")
+	if m.items[0].name == "" {
+		t.Fatal("expected first item to have a name")
 	}
 }

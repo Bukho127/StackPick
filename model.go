@@ -6,23 +6,9 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 )
-
-type rowKind int
-
-const (
-	rowHeader rowKind = iota
-	rowLib
-)
-
-// row is a flattened line in the checklist: either a category header
-// (not selectable) or a library entry (selectable, toggled with space).
-type row struct {
-	kind   rowKind
-	header string
-	catIdx int
-	libIdx int
-}
 
 type sessionState int
 
@@ -34,9 +20,9 @@ const (
 )
 
 type Model struct {
-	rows     []row
+	selected map[string]bool
+	items    []LibrarySelection
 	cursor   int
-	selected map[string]bool // key "catIdx-libIdx" -> selected?
 
 	state      sessionState
 	spinner    spinner.Model
@@ -47,36 +33,14 @@ type Model struct {
 	catalog    []Category
 }
 
-func buildRows(cats []Category) []row {
-	var rows []row
-	for ci, cat := range cats {
-		rows = append(rows, row{kind: rowHeader, header: cat.Name})
-		for li := range cat.Libs {
-			rows = append(rows, row{kind: rowLib, catIdx: ci, libIdx: li})
-		}
-	}
-	return rows
+type LibrarySelection struct {
+	catIdx      int
+	libIdx      int
+	name        string
+	description string
 }
 
-func (m *Model) startSelection(choice string) {
-	m.choice = choice
-	m.catalog = FrontendCategories
-	if choice == "backend" {
-		m.catalog = BackendCategories
-	}
-	m.rows = buildRows(m.catalog)
-	m.selected = make(map[string]bool)
-	m.cursor = 0
-	for i, r := range m.rows {
-		if r.kind == rowLib {
-			m.cursor = i
-			break
-		}
-	}
-	m.state = stateSelecting
-}
-
-// NewModel starts at the initial choice screen.
+// NewModel starts with the initial frontend/backend choice screen.
 func NewModel() Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -133,10 +97,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) updateChoice(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "f", "F", "frontend", "Frontend":
-		m.startSelection("frontend")
+		m.choice = "frontend"
+		m.catalog = FrontendCategories
+		m.loadItems()
+		m.state = stateSelecting
 		return m, nil
 	case "b", "B", "backend", "Backend":
-		m.startSelection("backend")
+		m.choice = "backend"
+		m.catalog = BackendCategories
+		m.loadItems()
+		m.state = stateSelecting
 		return m, nil
 	case "ctrl+c", "q":
 		return m, tea.Quit
@@ -145,23 +115,29 @@ func (m Model) updateChoice(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateSelecting(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Type == tea.KeyRunes {
+		if len(msg.Runes) == 1 {
+			r := msg.Runes[0]
+			if r >= '1' && r <= '9' {
+				idx := int(r - '0')
+				if idx <= len(m.items) {
+					item := m.items[idx-1]
+					key := keyOf(item.catIdx, item.libIdx)
+					m.selected[key] = !m.selected[key]
+					m.cursor = idx - 1
+					return m, nil
+				}
+			}
+		}
+	}
+
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
-
 	case "up", "k":
 		m.moveCursor(-1)
-
 	case "down", "j":
 		m.moveCursor(1)
-
-	case " ":
-		r := m.rows[m.cursor]
-		if r.kind == rowLib {
-			key := keyOf(r.catIdx, r.libIdx)
-			m.selected[key] = !m.selected[key]
-		}
-
 	case "enter":
 		pkgs := m.collectPackages()
 		if len(pkgs) == 0 {
@@ -174,28 +150,42 @@ func (m Model) updateSelecting(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) moveCursor(dir int) {
-	n := len(m.rows)
-	i := m.cursor
-	for {
-		i += dir
-		if i < 0 || i >= n {
-			return
-		}
-		if m.rows[i].kind == rowLib {
-			m.cursor = i
-			return
+func (m *Model) loadItems() {
+	m.items = nil
+	for ci, cat := range m.catalog {
+		for li := range cat.Libs {
+			m.items = append(m.items, LibrarySelection{
+				catIdx:      ci,
+				libIdx:      li,
+				name:        cat.Libs[li].Name,
+				description: cat.Libs[li].Description,
+			})
 		}
 	}
+	m.selected = make(map[string]bool)
+	m.cursor = 0
+}
+
+func (m *Model) moveCursor(dir int) {
+	n := len(m.items)
+	if n == 0 {
+		return
+	}
+	i := m.cursor + dir
+	if i < 0 {
+		i = 0
+	} else if i >= n {
+		i = n - 1
+	}
+	m.cursor = i
 }
 
 func (m Model) collectPackages() []string {
 	var pkgs []string
-	for ci, cat := range m.catalog {
-		for li := range cat.Libs {
-			if m.selected[keyOf(ci, li)] {
-				pkgs = append(pkgs, m.catalog[ci].Libs[li].Packages...)
-			}
+	for _, item := range m.items {
+		key := keyOf(item.catIdx, item.libIdx)
+		if m.selected[key] {
+			pkgs = append(pkgs, m.catalog[item.catIdx].Libs[item.libIdx].Packages...)
 		}
 	}
 	return pkgs
@@ -217,7 +207,7 @@ func (m Model) View() string {
 func (m Model) viewChoice() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("⚛  StackPick") + "\n\n")
-	b.WriteString(headerStyle.Render("Frontend or Backend ?") + "\n\n")
+	b.WriteString(headerStyle.Render("Frontend or Backend?") + "\n\n")
 	b.WriteString("  [F] Frontend\n")
 	b.WriteString("  [B] Backend\n\n")
 	b.WriteString(helpStyle.Render("press f or b to choose"))
@@ -225,28 +215,36 @@ func (m Model) viewChoice() string {
 }
 
 func (m Model) viewSelecting() string {
-	var b strings.Builder
-	b.WriteString(titleStyle.Render("⚛  Frontend Framework Picker") + "\n\n")
-	b.WriteString(headerStyle.Render("Category") + "  " + headerStyle.Render("Framework") + "  " + headerStyle.Render("Status") + "\n")
-	b.WriteString(strings.Repeat("-", 70) + "\n")
-
-	for i, r := range m.rows {
-		if r.kind == rowHeader {
-			b.WriteString("\n" + headerStyle.Render(r.header) + "\n")
-			continue
-		}
-		lib := m.catalog[r.catIdx].Libs[r.libIdx]
+	var rows [][]string
+	for idx, item := range m.items {
 		checked := "[ ]"
-		if m.selected[keyOf(r.catIdx, r.libIdx)] {
+		if m.selected[keyOf(item.catIdx, item.libIdx)] {
 			checked = "[x]"
 		}
-		line := fmt.Sprintf("%-16s  %-24s  %s", m.catalog[r.catIdx].Name, lib.Name, checked)
-		if i == m.cursor {
-			b.WriteString(cursorStyle.Render("› "+line) + "\n")
-		} else {
-			b.WriteString("  " + line + "\n")
-		}
+		label := fmt.Sprintf("%d. %s", idx+1, item.name)
+		rows = append(rows, []string{checked, label, item.description, m.catalog[item.catIdx].Name})
 	}
+
+	t := table.New().
+		Border(lipgloss.RoundedBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("240"))).
+		Headers("", "Library", "Description", "Category").
+		Rows(rows...).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			switch {
+			case row == table.HeaderRow:
+				return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
+			case row == m.cursor+1:
+				return lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Bold(true)
+			case col == 0:
+				if rows[row][0] == "[x]" {
+					return lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
+				}
+				return lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+			default:
+				return lipgloss.NewStyle()
+			}
+		})
 
 	count := 0
 	for _, v := range m.selected {
@@ -254,8 +252,12 @@ func (m Model) viewSelecting() string {
 			count++
 		}
 	}
+
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("⚛  StackPick") + "\n\n")
+	b.WriteString(t.Render())
 	b.WriteString("\n" + helpStyle.Render(fmt.Sprintf(
-		"↑/↓ move · space select (%d selected) · enter install · q quit", count)))
+		"1-9 select · ↑/↓ move · enter install · q quit (%d selected)", count)))
 	return b.String()
 }
 
