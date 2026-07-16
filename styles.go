@@ -10,4 +10,7 @@ var (
 	errorStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196"))
 	successStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42"))
 	spinnerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+	bannerStyle  = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("212"))
 )
