@@ -1,7 +1,7 @@
 
 ## StackPick 
 
-StackPick is an interactive CLI tool that helps developers bootstrap React projects by selecting and installing commonly used libraries and tools in one command.
+StackPick is an interactive CLI tool that helps developers bootstrap JS projects by selecting and installing commonly used libraries and tools in one command.
 
 Instead of manually installing packages like React Router, Axios, Tailwind CSS, Zustand, or TanStack Query, StackPick lets you choose your stack from an interactive terminal interface and sets everything up for you.
 
