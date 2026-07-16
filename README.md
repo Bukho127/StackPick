@@ -16,7 +16,5 @@ Instead of manually installing packages like React Router, Axios, Tailwind CSS, 
 - Configure ESLint and Prettier
 - Extensible plugin architecture (planned)
 
-## Installation
 
-```bash
-npm install -g stackpick
+
