@@ -206,7 +206,8 @@ func (m Model) View() string {
 
 func (m Model) viewChoice() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("⚛  StackPick") + "\n\n")
+	b.WriteString(titleStyle.Render("⚛  StackPick") + "\n")
+	b.WriteString(headerStyle.Render(fmt.Sprintf("Version %s", appVersion)) + "\n\n")
 	b.WriteString(headerStyle.Render("Frontend or Backend?") + "\n\n")
 	b.WriteString("  [F] Frontend\n")
 	b.WriteString("  [B] Backend\n\n")
